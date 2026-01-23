@@ -2,10 +2,14 @@ import cv2
 import time
 import RPi.GPIO as GPIO
 from picamera2 import Picamera2
-from flask import Response
-from flask import Flask
+from flask import Flask, send_file
 from flask_socketio import SocketIO, emit
 from flask import render_template
+import base64
+import ctypes
+import random
+import string
+import os
 
 app = Flask(__name__, static_folder="../frontend/dist/assets", template_folder="../frontend/dist")
 
@@ -47,58 +51,165 @@ p2.start(30) #Start PWM with an initial duty cycle of 30
 
 # Create PWM object with frequency set to 50Hz
 pwm = GPIO.PWM(servo_pin, 50)
-# Start PWM with an initial duty cycle of 0%
-pwm.start(0)#Start PWM with an initial duty cycle of 30
+pwm.start(0)
 
 socketio = SocketIO(app)
 
+lib_path = './backend/camera_mount/mount_functions.o'
+c_functions = ctypes.CDLL(lib_path)
+
 picam2 = Picamera2()
-camera_config = picam2.create_video_configuration(main={"size": (320, 240), "format": "RGB888"})
+#camera_config = picam2.create_video_configuration(main={"size": (240, 180), "format": "RGB888"})
+camera_config = picam2.create_video_configuration(main={"size": (1440, 1080), "format": "RGB888"}, lores={"size": (256, 160), "format": "YUV420"})
 picam2.configure(camera_config)
 picam2.set_controls({"FrameRate": 20, "NoiseReductionMode": 1})
 picam2.start()
 
-def generate_frames():
-  while True:
-    frame = picam2.capture_array()
-    frame = cv2.flip(frame, 0)
-    _, buffer = cv2.imencode('.jpg', frame)
-    frame = buffer.tobytes()
-    yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+c_functions.init()
 
-def set_angle(angle):
-	# Calculate duty cycle (0.5ms to 2.5ms=>0% -180%)
-	duty_cycle = angle / 18 + 2  # transcoding
-	pwm.ChangeDutyCycle(duty_cycle)  # Modify the duty cycle of the servo motor
+max_steer = 360
+max_drive = 360
+
+def cap_value(value, max_value):
+	if value > max_value:
+		value = max_value
+	elif value < -max_value:
+		value = -max_value
+	return value
+
+def round_to_nearest(number, nearest):
+  nearest_multiple = round(number / nearest) * nearest
+  return nearest_multiple
+
+def generate_random_string(length):
+	characters = string.ascii_letters + string.digits
+	random_string = ''.join(random.choices(characters, k=length))
+	return random_string
+
+def get_files_sorted_by_creation_date(directory_path):
+	with os.scandir(directory_path) as entries:
+			files_with_ctime = [(entry.stat().st_ctime, entry) for entry in entries if entry.is_file()]
+	files_with_ctime.sort(reverse=True)
+	sorted_files = [f'/photo/{entry.name}' for timestamp, entry in files_with_ctime]
+	return sorted_files
+
+def get_album():
+	files_only = get_files_sorted_by_creation_date('./album')
+	return files_only
+
+def take_photo():
+	frame = picam2.capture_array()
+	frame = cv2.flip(frame, 0)
+	frame = cv2.flip(frame, 1)
+	cv2.imwrite(f'./album/{generate_random_string(10)}.jpg', frame)
+
+	return get_album()
+
+def process_delete_photo(photo):
+	os.remove(f'./album/{os.path.basename(photo)}')
 
 def process_command(data):
-	#set_angle(90)  # Set the servo to 90 degrees
-	if data['drive'] == 0:
-		time.sleep(0.5)  # Wait for 0.5 seconds
-		GPIO.output(AN11,GPIO.LOW) #Input low level to the AN1 pin of 1 # DRV8833
-		GPIO.output(AN12,GPIO.LOW) #Input low level to the AN2 pin of 1 # DRV8833
-		GPIO.output(BN21,GPIO.LOW) #Input low level to the BN1 pin of 2 # DRV8833
-		GPIO.output(BN22,GPIO.LOW) #Input low level to the BN2 pin of 2 # DRV8833
-	else:
-		time.sleep(0.5)  # Wait for 0.5 seconds
-		GPIO.output(AN11,GPIO.LOW)
-		GPIO.output(AN12,GPIO.HIGH)
-		GPIO.output(BN21,GPIO.LOW)
-		GPIO.output(BN22,GPIO.HIGH)
+	drive = None
+	steer_angle = None
+	device = data['device']
 	
+	if device == 'movement':
+		if data['drive'] == None:
+			GPIO.output(AN11,GPIO.LOW)
+			GPIO.output(AN12,GPIO.LOW)
+			GPIO.output(BN21,GPIO.LOW)
+			GPIO.output(BN22,GPIO.LOW)
+		else:
+			#c_functions.reset_pan()
+			# handle throttle
+			drive = cap_value(data['drive'], max_drive)
+			if drive > 0:
+				# forward
+				GPIO.output(AN11,GPIO.LOW)
+				GPIO.output(AN12,GPIO.HIGH)
+				GPIO.output(BN21,GPIO.LOW)
+				GPIO.output(BN22,GPIO.HIGH)
+			else:
+				# reverse
+				GPIO.output(AN11,GPIO.HIGH)
+				GPIO.output(AN12,GPIO.LOW)
+				GPIO.output(BN21,GPIO.HIGH)
+				GPIO.output(BN22,GPIO.LOW)
+
+			drive = round((abs(drive) / max_drive) * 90)
+			if drive < 40:
+				drive = 40
+			p1.ChangeDutyCycle(drive)
+			p2.ChangeDutyCycle(drive)
+
+		if data['steer'] == None:
+			pwm.ChangeDutyCycle(0)
+		else:
+			steer = -cap_value(data['steer'], max_steer)
+			steer += max_steer
+			steer_angle = round(steer / (max_steer * 2) * 180)
+			steer_angle = round_to_nearest(steer_angle, 10)
+			if drive is None or drive <= 50:
+				if steer_angle < 50:
+					steer_angle = 50
+				elif steer_angle > 100:
+					steer_angle = 100
+			duty_cycle = steer_angle / 18 + 2
+			pwm.ChangeDutyCycle(duty_cycle)
+	else:
+		if data['drive'] is not None:
+			if data['drive'] > 0:
+				c_functions.tilt_up()
+			else:
+				c_functions.tilt_down()
+		if data['steer'] is not None:
+			if data['steer'] > 0:
+				c_functions.pan_right()
+			else:
+				c_functions.pan_left()
+
+	print(f'drive: {drive}, steer: {steer_angle}, device: {device}')
+
+def stream_frames():
+	while True:
+		frame = picam2.capture_array('lores')
+		frame = cv2.cvtColor(frame, cv2.COLOR_YUV420p2RGB)
+		frame = cv2.flip(frame, 0)
+		frame = cv2.flip(frame, 1)
+		ret, buffer = cv2.imencode('.jpg', frame)
+		if ret:
+			jpg_as_text = base64.b64encode(buffer).decode('utf-8')
+			socketio.emit('video_frame', {'image': jpg_as_text})
+		time.sleep(0.1)
+
 @app.route("/")
 def index():
 	return render_template("index.html")
 
-@app.route("/video_feed")
-def video_feed():
-	return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+@app.route('/photo/<filename>', methods=['GET'])
+def get_image(filename):
+	image_path = f'../album/{filename}'
+	return send_file(image_path, mimetype='image/jpeg')
+
+@socketio.on('connect')
+def test_connect(_):
+	socketio.start_background_task(stream_frames)
+	emit('album', get_album())
 
 @socketio.on('command')
 def command(data):
-	#process_command(data)
-	print(data)
+	process_command(data)
 	emit('command_status', data)
+
+@socketio.on('photo')
+def photo():
+	ret = take_photo()
+	emit('photo_status', ret)
+
+@socketio.on('delete_photo')
+def delete_photo(photo):
+	process_delete_photo(photo)
+	emit('album', get_album())
 
 if __name__ == '__main__':
 	app.run(host='0.0.0.0', port=8000, debug=False, threaded=True, use_reloader=False)
