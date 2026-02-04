@@ -15,7 +15,7 @@ void reset_pan() {
 }
 void reset_tilt() {
     tcflush(0, TCIOFLUSH);
-    setServoDegree(SERVO_UP_CH, 90);
+    setServoDegree(SERVO_UP_CH, 95);
 }
 void tilt_up() {
     tcflush(0, TCIOFLUSH);

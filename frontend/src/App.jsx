@@ -27,8 +27,13 @@ import {
   LuLightbulb,
   LuLightbulbOff,
   LuSwitchCamera,
+  LuMic,
+  LuMicOff,
 } from "react-icons/lu"
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
+
+import GestureDriveImg from './assets/gesture-left.png';
+import GestureSteerImg from './assets/gesture-right.png';
 
 import './App.css';
 
@@ -96,6 +101,7 @@ function App() {
   const [device, setDevice] = useState('vehicle');
   const [albumOpen, setAlbumOpen] = useState(false);
   const [photoOpen, setPhotoOpen] = useState(null);
+  const [mic, setMic] = useState(false);
   const [album, setAlbum] = useState(['']);
   const [photoTaken, setPhotoTaken] = useState(false);
   const [light, setLight] = useState(false);
@@ -160,33 +166,40 @@ function App() {
   }, [windowDimensions]);
 
   useEffect(() => {
-    if (commandTimer.current) {
-      return;
+    if (managerDrive.current) {
+      managerDrive.current.destroy();
+    }
+    if (managerSteer.current) {
+      managerSteer.current.destroy();
     }
 
-    if (IDLE_TIME_MS) {
-      idleTimer.current = setTimeout(() => {
-        setIdle(true);
-      }, [IDLE_TIME_MS]);
-    }
+    handleResetIdle();
 
     const optionsDrive = {
       zone: drive.current,
       lockY: true,
       shape: 'square',
-      mode: 'static',
-      restJoystick: true,
-      position: { top: 'calc(50% + 20px)', left: '120px' },
+      mode: 'dynamic',
     };
     managerDrive.current = nipplejs.create(optionsDrive);
-    const optionsSteer = {
-      zone: steer.current,
-      lockX: true,
-      shape: 'square',
-      restJoystick: false,
-      mode: 'static',
-      position: { top: 'calc(50% + 20px)', right: '120px' },
-    };
+    let optionsSteer = null;
+    if (device == 'vehicle') {
+      optionsSteer = {
+        zone: steer.current,
+        lockX: true,
+        shape: 'square',
+        restJoystick: false,
+        mode: 'static',
+        position: { top: 'calc(50% + 20px)', right: '120px' },
+      };
+    } else {
+      optionsSteer = {
+        zone: steer.current,
+        lockX: true,
+        shape: 'square',
+        mode: 'dynamic',
+      };
+    }
     managerSteer.current = nipplejs.create(optionsSteer);
 
     managerDrive.current.on('start', () => {
@@ -196,7 +209,7 @@ function App() {
       setDriveActive(false);
     }).on('move', (evt, data) => {
       if (data.force && data.direction) {
-	      driveValue.current = convertNippleData(data);
+        driveValue.current = convertNippleData(data);
         handleResetIdle();
       }
     });
@@ -207,11 +220,11 @@ function App() {
       setSteerActive(false);
     }).on('move', (evt, data) => {
       if (data.force && data.direction) {
-	      steerValue.current = convertNippleData(data);
+        steerValue.current = convertNippleData(data);
         handleResetIdle();
       }
     });
-  }, []);
+  }, [device]);
 
   useEffect(() => {
     if (commandTimer.current) {
@@ -304,6 +317,29 @@ function App() {
     }
   }, [idle]);
 
+  useEffect(() => {
+    if (socket.current) {
+      socket.current.emit('light', light);
+      handleResetIdle();
+    }
+  }, [light]);
+
+  useEffect(() => {
+    if (socket.current) {
+      socket.current.emit('mic', mic);
+      handleResetIdle();
+    }
+  }, [mic]);
+
+  const gestureAlignmentClass = useMemo(() => {
+    const aspectRatio = CAMERA_ASPECT_RATIO;
+    const videoWidth = window.innerHeight * aspectRatio;
+    if (videoWidth >= window.innerWidth) {
+      return 'gesture-alignBottom';
+    }
+    return 'gesture-alignCenter';
+  }, [windowDimensions]);
+
   const buttonsDisabled = photoOpen || albumOpen;
 
   return (
@@ -353,8 +389,16 @@ function App() {
           </Presence>
         </div>
         <div id="controls">
-          <div className="zone" id="drive" ref={drive}></div>
-          <div className="zone" id="steer" ref={steer}></div>
+          <div className="zone" id="drive" ref={drive}>
+            <div className={`gesture ${gestureAlignmentClass} gesture-drive${(!driveActive && !photoOpen && !albumOpen) ? ' gesture--visible' : ''}`}>
+              <img src={GestureDriveImg} />
+            </div>
+          </div>
+          <div className="zone" id="steer" ref={steer}>
+            <div className={`gesture ${gestureAlignmentClass} gesture-steer${(device == 'camera' && !steerActive && !photoOpen && !albumOpen) ? ' gesture--visible' : ''}`}>
+              <img src={GestureSteerImg} />
+            </div>
+          </div>
         </div>
         {albumOpen && (
           <div className="overlay"></div>
@@ -393,6 +437,13 @@ function App() {
         )}
         <div className="settings settings-left">
           <Flex gap="2">
+            <IconButton disabled={buttonsDisabled} aria-label="Toggle mic" size="lg" colorPalette={mic ? 'blue' : 'white'} variant="solid" onClick={() => setMic(!mic)}>
+              {light ? (
+                <LuMic color="white" />
+              ) : (
+                <LuMicOff color="white" />
+              )}
+            </IconButton>
             <IconButton aria-label="Take Photo" size="lg" colorPalette="white" variant="outline" disabled={buttonsDisabled} onClick={() => takePhoto()}>
               <LuCamera color="white" />
             </IconButton>

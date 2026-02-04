@@ -1,6 +1,9 @@
 from gevent import monkey
 monkey.patch_all(thread=False, threading=False)
 
+import signal
+import sys
+import atexit
 import cv2
 import RPi.GPIO as GPIO
 from picamera2 import Picamera2
@@ -18,17 +21,17 @@ from threading import Event
 DEBUG = True
 
 # Frame rate of video stream
-FRAME_RATE = 20
+FRAME_RATE = 24
 
 # Values below this do not provide enough power to move the car
 # so anytime the throttle is activated, do not allow it to drop below this.
 MIN_THROTTLE_VALUE = 40
 
 # Anytime the throttle is activated, do not allow it to go above this.
-MAX_THROTTLE_VALUE = 70
+MAX_THROTTLE_VALUE = 90
 
 # A higher value results in more force being required to drive
-DRIVE_SENSITIVITY = 180
+DRIVE_SENSITIVITY = 200
 
 # A higher value results in more force being required to steer
 STEER_SENSITIVITY = 360
@@ -50,6 +53,8 @@ CENTER_CAMERA_TILT_WHEN_DRIVING = False
 PASSWORD = False
 
 app = Flask(__name__, static_folder="../frontend/dist/assets", template_folder="../frontend/dist")
+
+led_pin = 10
 
 NSLEEP1 = 12
 AN11 = 17
@@ -74,6 +79,20 @@ camera_mount_controller = None
 worker = None
 
 thread_event = Event()
+
+def cleanup():
+  GPIO.cleanup()
+  thread_event.clear()
+  if DEBUG:
+    print(f'cleanup')
+
+atexit.register(cleanup)
+
+def signal_handler(sig, frame):
+    cleanup()
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, signal_handler)
 
 def cap_value(value, max_value):
 	if value > max_value:
@@ -215,7 +234,7 @@ class StreamFramesWorker(object):
 					if ret:
 						jpg_as_text = base64.b64encode(buffer).decode('utf-8')
 						socketio.emit('video_frame', {'image': jpg_as_text})
-				socketio.sleep(0.1)
+				socketio.sleep(0.05)
 		finally:
 			event.clear()
 	
@@ -271,6 +290,8 @@ def connect():
 
 		pwm = GPIO.PWM(servo_pin, 50)
 		pwm.start(0)
+
+		GPIO.setup(led_pin, GPIO.OUT)
 		
 		picam2 = Picamera2()
 		camera_config = picam2.create_video_configuration(
@@ -300,7 +321,7 @@ def connect():
 
 @socketio.on('disconnect')
 def on_disconnect():
-  thread_event.clear()
+	thread_event.clear()
 
 @socketio.on('command')
 def command(data):
@@ -316,13 +337,39 @@ def photo():
 	process_photo()
 	emit('album', get_album())
 
+@socketio.on('light')
+def light(data):
+	if data:
+		GPIO.output(led_pin, GPIO.HIGH)
+		if DEBUG:
+			print(f'light turned on')
+	else:
+		GPIO.output(led_pin, GPIO.LOW)
+		if DEBUG:
+			print(f'light turned off')
+
+@socketio.on('mic')
+def mic(data):
+	if data:
+		# TODO - handle mic on
+		if DEBUG:
+			print(f'light turned on')
+	else:
+		# TODO - handle mic off
+		if DEBUG:
+			print(f'light turned off')
+
 @socketio.on('idle')
 def idle(data):
 	global worker
 	if data:
 		worker.stop()
+		if DEBUG:
+			print(f'user set to idle')
 	else:
 		worker.start()
+		if DEBUG:
+			print(f'user set to active')
 
 @socketio.on('delete_photo')
 def delete_photo(photo):
@@ -331,4 +378,4 @@ def delete_photo(photo):
 
 if __name__ == '__main__':
 	setproctitle.setproctitle('pi-camera-car')
-	socketio.run(app, host='0.0.0.0', port=8000, debug=True)
+	socketio.run(app, host='0.0.0.0', port=8000, debug=False, use_reloader=False)
