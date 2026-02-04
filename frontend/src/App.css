@@ -63,21 +63,26 @@
   user-select: none;
   -webkit-touch-callout: none;
   touch-action: none;
+  width:50%;
+  height:100%;
 }
 .App #controls #drive {
   left:0px;
   top:0px;
-  width:50%;
-  height:100%;
   justify-content: flex-start;
 }
 .App #controls #steer {
   right:0px;
   top:0px;
-  width:50%;
-  height:100%;
   justify-content: flex-end;
 }
+
+.App.App--portrait #controls .zone {
+  height: 380px;
+  bottom: 0;
+  top: auto !important;
+}
+
 .App #controls .gesture {
   width: 150px;
   height: 150px;

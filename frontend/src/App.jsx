@@ -31,8 +31,6 @@ import {
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 
 import './App.css';
-import GestureDriveImg from './assets/gesture-left.png';
-import GestureSteerImg from './assets/gesture-right.png';
 
 // The number of milliseconds between joystick position emissions to the backend.
 // A lower number causes more frequent syncing and a theoretically more responsive experience,
@@ -152,6 +150,15 @@ function App() {
     }
   };
 
+  const mode = useMemo(() => {
+    const aspectRatio = CAMERA_ASPECT_RATIO;
+    const videoWidth = window.innerHeight * aspectRatio;
+    if (videoWidth >= window.innerWidth) {
+      return 'portrait';
+    }
+    return 'landscape';
+  }, [windowDimensions]);
+
   useEffect(() => {
     if (commandTimer.current) {
       return;
@@ -166,13 +173,19 @@ function App() {
     const optionsDrive = {
       zone: drive.current,
       lockY: true,
-      shape: "square",
+      shape: 'square',
+      mode: 'static',
+      restJoystick: true,
+      position: { top: 'calc(50% + 20px)', left: '120px' },
     };
     managerDrive.current = nipplejs.create(optionsDrive);
     const optionsSteer = {
       zone: steer.current,
       lockX: true,
-      shape: "square",
+      shape: 'square',
+      restJoystick: false,
+      mode: 'static',
+      position: { top: 'calc(50% + 20px)', right: '120px' },
     };
     managerSteer.current = nipplejs.create(optionsSteer);
 
@@ -224,23 +237,16 @@ function App() {
   }, [driveActive, steerActive, device, showLatencyWarning]);
 
   const appClass = useMemo(() => {
+    let className = `App--${mode}`;
     if (window.requireAuth && !authenticated) {
-      return 'App--unauthenticated';
+      className += ' App--unauthenticated';
+    } else if (driveActive || steerActive) {
+      className += ' App--active';
+    } else {
+      className += ' App--inactive';
     }
-    if (driveActive || steerActive) {
-      return 'App--active';
-    }
-    return 'App--inactive';
-  }, [driveActive, steerActive, authenticated]);
-
-  const gestureAlignmentClass = useMemo(() => {
-    const aspectRatio = CAMERA_ASPECT_RATIO;
-    const videoWidth = window.innerHeight * aspectRatio;
-    if (videoWidth >= window.innerWidth) {
-      return 'gesture-alignBottom';
-    }
-    return 'gesture-alignCenter';
-  }, [windowDimensions]);
+    return className;
+  }, [driveActive, steerActive, authenticated, mode]);
 
   const takePhoto = () => {
     socket.current.emit('photo');
@@ -293,7 +299,9 @@ function App() {
   };
 
   useEffect(() => {
-    socket.current.emit('idle', idle);
+    if (socket.current) {
+      socket.current.emit('idle', idle);
+    }
   }, [idle]);
 
   const buttonsDisabled = photoOpen || albumOpen;
@@ -345,16 +353,8 @@ function App() {
           </Presence>
         </div>
         <div id="controls">
-          <div className="zone" id="drive" ref={drive}>
-            <div className={`gesture ${gestureAlignmentClass} gesture-drive${(!driveActive && !photoOpen && !albumOpen) ? ' gesture--visible' : ''}`}>
-              <img src={GestureDriveImg} />
-            </div>
-          </div>
-          <div className="zone" id="steer" ref={steer}>
-            <div className={`gesture ${gestureAlignmentClass} gesture-steer${(!steerActive && !photoOpen && !albumOpen) ? ' gesture--visible' : ''}`}>
-              <img src={GestureSteerImg} />
-            </div>
-          </div>
+          <div className="zone" id="drive" ref={drive}></div>
+          <div className="zone" id="steer" ref={steer}></div>
         </div>
         {albumOpen && (
           <div className="overlay"></div>

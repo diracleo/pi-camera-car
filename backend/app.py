@@ -28,7 +28,7 @@ MIN_THROTTLE_VALUE = 40
 MAX_THROTTLE_VALUE = 70
 
 # A higher value results in more force being required to drive
-DRIVE_SENSITIVITY = 250
+DRIVE_SENSITIVITY = 180
 
 # A higher value results in more force being required to steer
 STEER_SENSITIVITY = 360
