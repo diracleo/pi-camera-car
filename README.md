@@ -1,6 +1,6 @@
 # Raspberry Pi Camera Car
 
-This is a Raspberry Pi car with a tiltable and pannable camera controlled by a phone from anywhere in the world through the internet, using a live video feed and [virtual joysticks](https://github.com/yoannmoinet/nipplejs) on a web page. It's built with Python, Flask, Socket.IO, and React.
+This is a Raspberry Pi car with a tiltable and pannable camera controlled by a phone from anywhere in the world through the internet on a webpage, using a live video feed, [virtual joysticks](https://github.com/yoannmoinet/nipplejs), two-way audio, and an LED headlight. It's built with Python, Flask, Socket.IO, and React.
 <br/><br/>
 <p align="center">
   <a href="https://www.youtube.com/watch?v=jtcBjbbCzTw" target="_blank">
@@ -35,12 +35,15 @@ This is a Raspberry Pi car with a tiltable and pannable camera controlled by a p
 - Option to auto center the camera platform upon toggling back to driving mode
 - Take HD photos and save them to an album whose photos can be viewed with phone gesture zooming and panning
 - Detects if user is idle, and if so, stops streaming video until they re-engage (saves bandwidth)
+- Speak into the microphone on your phone to have it play out of the car's speaker
+- Car's microphone picks up audio in the room and plays it out of the phone's speaker
+- Attach an LED headlight
 - The entire thing, including the Raspberry Pi, is powered by rechargable batteries
 - Can be controlled from anywhere in the world through the internet using ngrok (or locally on a WiFi network)
 
 ## How it works
 
-The Raspberry Pi runs a Flask server with Socket.IO / gevent integration, accepting websocket messages to control the movement of the car. The GPIO is integrated through the Python interface to control the steering servo, rear wheel motors, and the camera platform servo positions. The live feed of the camera is served to the frontend through the websocket as a series of low resolution JPG images at 20 frames per second, optimized for low latency. Using ngrok, port 8000 is opened up to traffic, allowing the car to be controlled through the internet, with optional password protection.
+The Raspberry Pi runs a Flask server with Socket.IO / gevent integration, accepting websocket messages to control the movement of the car. The GPIO is integrated through the Python interface to control the steering servo, rear wheel motors, and the camera platform servo positions. The live feed of the camera is served to the frontend through the websocket as a series of low resolution JPG images at 20 frames per second, optimized for low latency. Two way audio is also sent back and forth through the websocket. Using ngrok, port 8000 is opened up to traffic, allowing the car to be controlled through the internet, with optional password protection.
 
 The frontend is a React application with two virtual joysticks. The left joystick operates on the vertical plane and controls the forward and reverse motion of the car and the tilt of the camera. The right joystick operates on the horizontal plane and controls the steering of the car and the pan of the camera. The speed and steering radius of the car are directly correlated with the force applied to the virtual joysticks. Joystick control data is emitted to the server every 25 milliseconds to continously sync the car's speed and servo positions, providing a responsive experience.
 
@@ -54,6 +57,8 @@ The photo button, on the top left, takes an HD photo, which gets saved on the Ra
 - [Arducam camera module](https://www.amazon.com/dp/B01LY05LOE)
 - [Arducam camera pan tilt platform](https://www.amazon.com/dp/B08PK9N9T4)
 - [18650 2-battery pack with charger](https://www.amazon.com/dp/B0FQ9QQ64K)
+- [3 Watt 8 OHM speaker](https://www.amazon.com/dp/B0738NLFTG)
+- [USB sound card](https://www.amazon.com/dp/B08R38TXXL)
 - [Dupont jumper wires](https://www.amazon.com/dp/B0BRTHR2RL)
 - [Power jack adapter barrel connector](https://www.amazon.com/dp/B0CR8TZ41W)
 - [64 GB Micro SD card (could be any size larger than 8GB)](https://www.amazon.com/dp/B0DRRDJKDV)
@@ -66,6 +71,7 @@ The photo button, on the top left, takes an HD photo, which gets saved on the Ra
 1. Follow the instructions for the robot car chassis assembly using Demo2 (Robot HAT)
 2. Attach the camera to the Raspberry Pi with the ribbon cable
 3. Follow the instructions for the camera pan tilt platform assembly, attach it to the Raspberry Pi's GPIO, and mount the platform on the car
+4. Attach the USB sound card and speaker
 
 ### Software
 

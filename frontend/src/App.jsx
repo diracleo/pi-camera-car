@@ -1,4 +1,4 @@
-import React, {useEffect, useRef, useState, useMemo } from 'react';
+import React, {useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import nipplejs from 'nipplejs';
 import { io } from "socket.io-client";
 import {
@@ -27,8 +27,15 @@ import {
   LuLightbulb,
   LuLightbulbOff,
   LuSwitchCamera,
+  LuMic,
+  LuMicOff,
+  LuVolume2,
+  LuVolumeX
 } from "react-icons/lu"
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
+
+import GestureDriveImg from './assets/gesture-left.png';
+import GestureSteerImg from './assets/gesture-right.png';
 
 import './App.css';
 
@@ -90,12 +97,18 @@ function App() {
   const photoTakenTimer = useRef(null);
   const socket = useRef(null);
   const currentLatency = useRef(null);
+  const audioContext = useRef(null);
+  const startTime = useRef(0);
   const idleTimer = useRef(null);
+  const mediaRecorder = useRef(null);
   const [driveActive, setDriveActive] = useState(false);
   const [steerActive, setSteerActive] = useState(false);
   const [device, setDevice] = useState('vehicle');
   const [albumOpen, setAlbumOpen] = useState(false);
   const [photoOpen, setPhotoOpen] = useState(null);
+  const [mic, setMic] = useState(false);
+  const [speaker, setSpeaker] = useState(false);
+  const speakerRef = useRef(false);
   const [album, setAlbum] = useState(['']);
   const [photoTaken, setPhotoTaken] = useState(false);
   const [light, setLight] = useState(false);
@@ -104,16 +117,37 @@ function App() {
   const [authenticationError, setAuthenticationError] = useState(false);
   const [authenticateLoading, setAuthenticateLoading] = useState(false);
   const [showLatencyWarning, setShowLatencyWarning] = useState(false);
+  const [showMicrophone, setShowMicrophone] = useState(false);
+  const [showSpeaker, setShowSpeaker] = useState(false);
+  const [showHeadlight, setShowHeadlight] = useState(false);
   const [idle, setIdle] = useState(false);
   const windowDimensions = useWindowDimensions();
-  
+
+  const playAudio = (chunk) => {
+    if (navigator.userActivation.hasBeenActive && speakerRef.current) {
+      const arrayBuffer = chunk;
+      var source = audioContext.current.createBufferSource();
+      audioContext.current.decodeAudioData(arrayBuffer, function(buffer){
+        source.buffer = buffer;
+        source.connect(audioContext.current.destination);
+        if (startTime.current < audioContext.current.currentTime) {
+            startTime.current = audioContext.current.currentTime;
+        }
+        source.start(startTime.current);
+        startTime.current += source.buffer.duration;
+      }, function(){
+        console.log('error');
+      })
+    }
+  }
+
   useEffect(() => {
     if (window.requireAuth && !authenticated) {
       return;
     }
 
     socket.current = io.connect(`/?password=${password}`);
-    socket.current.on('connect', function() {
+    socket.current.on('connect', function(data) {
       console.log('Connected to server');
     });
 
@@ -135,6 +169,23 @@ function App() {
     socket.current.on('album', function(data) {
       setAlbum(data);
       setPhotoOpen(null);
+    });
+    socket.current.on('audio', function(data) {
+      playAudio(data.audio);
+    });
+
+    socket.current.on('settings', function(data) {
+      const AudioContext = window.AudioContext || window.webkitAudioContext
+      audioContext.current = new AudioContext({ sampleRate: data.AUDIO_SAMPLE_RATE });
+      if (data.ENABLE_AUDIO_INPUT && navigator.mediaDevices) {
+        setShowMicrophone(true);
+      }
+      if (data.ENABLE_AUDIO_OUTPUT) {
+        setShowSpeaker(true);
+      }
+      if (data.ENABLE_HEADLIGHT) {
+        setShowHeadlight(true);
+      }
     });
   }, [authenticated]);
 
@@ -160,33 +211,40 @@ function App() {
   }, [windowDimensions]);
 
   useEffect(() => {
-    if (commandTimer.current) {
-      return;
+    if (managerDrive.current) {
+      managerDrive.current.destroy();
+    }
+    if (managerSteer.current) {
+      managerSteer.current.destroy();
     }
 
-    if (IDLE_TIME_MS) {
-      idleTimer.current = setTimeout(() => {
-        setIdle(true);
-      }, [IDLE_TIME_MS]);
-    }
+    handleResetIdle();
 
     const optionsDrive = {
       zone: drive.current,
       lockY: true,
       shape: 'square',
-      mode: 'static',
-      restJoystick: true,
-      position: { top: 'calc(50% + 20px)', left: '120px' },
+      mode: 'dynamic',
     };
     managerDrive.current = nipplejs.create(optionsDrive);
-    const optionsSteer = {
-      zone: steer.current,
-      lockX: true,
-      shape: 'square',
-      restJoystick: false,
-      mode: 'static',
-      position: { top: 'calc(50% + 20px)', right: '120px' },
-    };
+    let optionsSteer = null;
+    if (device == 'vehicle') {
+      optionsSteer = {
+        zone: steer.current,
+        lockX: true,
+        shape: 'square',
+        restJoystick: false,
+        mode: 'static',
+        position: { top: 'calc(50% + 20px)', right: '120px' },
+      };
+    } else {
+      optionsSteer = {
+        zone: steer.current,
+        lockX: true,
+        shape: 'square',
+        mode: 'dynamic',
+      };
+    }
     managerSteer.current = nipplejs.create(optionsSteer);
 
     managerDrive.current.on('start', () => {
@@ -196,7 +254,7 @@ function App() {
       setDriveActive(false);
     }).on('move', (evt, data) => {
       if (data.force && data.direction) {
-	      driveValue.current = convertNippleData(data);
+        driveValue.current = convertNippleData(data);
         handleResetIdle();
       }
     });
@@ -207,11 +265,11 @@ function App() {
       setSteerActive(false);
     }).on('move', (evt, data) => {
       if (data.force && data.direction) {
-	      steerValue.current = convertNippleData(data);
+        steerValue.current = convertNippleData(data);
         handleResetIdle();
       }
     });
-  }, []);
+  }, [device]);
 
   useEffect(() => {
     if (commandTimer.current) {
@@ -304,6 +362,71 @@ function App() {
     }
   }, [idle]);
 
+  useEffect(() => {
+    if (socket.current) {
+      socket.current.emit('light', light);
+      handleResetIdle();
+    }
+  }, [light]);
+
+  function startRecording() {
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then(stream => {
+        if (!MediaRecorder.isTypeSupported('audio/webm')) return alert('Browser not supported');
+        if (!mediaRecorder.current) {
+          const audioTrack = stream.getAudioTracks()[0];
+          const settings = audioTrack.getSettings();
+          mediaRecorder.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+          mediaRecorder.current.ondataavailable = event => {
+            if (event.data.size > 0) {
+              socket.current.emit('audio', {
+                settings: settings,
+                data: event.data,
+              });
+              console.log(event.data);
+            }
+          };
+        }
+        mediaRecorder.current.start(1000); 
+      })
+      .catch(error => console.error("Microphone access error:", error));
+  }
+
+  function stopRecording() {
+    if (mediaRecorder.current && mediaRecorder.current.state !== 'inactive') {
+      mediaRecorder.current.stop();
+    }
+  }
+
+  useEffect(() => {
+    if (socket.current) {
+      socket.current.emit('mic', mic);
+      handleResetIdle();
+      if (mic) {
+        startRecording();
+      } else {
+        stopRecording();
+      }
+    }
+  }, [mic]);
+
+  useEffect(() => {
+    speakerRef.current = speaker;
+    if (socket.current) {
+      socket.current.emit('speaker', speaker);
+      handleResetIdle();
+    }
+  }, [speaker]);
+
+  const gestureAlignmentClass = useMemo(() => {
+    const aspectRatio = CAMERA_ASPECT_RATIO;
+    const videoWidth = window.innerHeight * aspectRatio;
+    if (videoWidth >= window.innerWidth) {
+      return 'gesture-alignBottom';
+    }
+    return 'gesture-alignCenter';
+  }, [windowDimensions]);
+
   const buttonsDisabled = photoOpen || albumOpen;
 
   return (
@@ -353,8 +476,16 @@ function App() {
           </Presence>
         </div>
         <div id="controls">
-          <div className="zone" id="drive" ref={drive}></div>
-          <div className="zone" id="steer" ref={steer}></div>
+          <div className="zone" id="drive" ref={drive}>
+            <div className={`gesture ${gestureAlignmentClass} gesture-drive${(!driveActive && !photoOpen && !albumOpen) ? ' gesture--visible' : ''}`}>
+              <img src={GestureDriveImg} />
+            </div>
+          </div>
+          <div className="zone" id="steer" ref={steer}>
+            <div className={`gesture ${gestureAlignmentClass} gesture-steer${(device == 'camera' && !steerActive && !photoOpen && !albumOpen) ? ' gesture--visible' : ''}`}>
+              <img src={GestureSteerImg} />
+            </div>
+          </div>
         </div>
         {albumOpen && (
           <div className="overlay"></div>
@@ -393,6 +524,24 @@ function App() {
         )}
         <div className="settings settings-left">
           <Flex gap="2">
+            {showSpeaker && (
+              <IconButton disabled={buttonsDisabled} aria-label="Toggle speaker" size="lg" colorPalette={speaker ? 'blue' : 'white'} variant="solid" onClick={() => setSpeaker(!speaker)}>
+                {speaker ? (
+                  <LuVolume2 color="white" />
+                ) : (
+                  <LuVolumeX color="white" />
+                )}
+              </IconButton>
+            )}
+            {showMicrophone && (
+              <IconButton disabled={buttonsDisabled} aria-label="Toggle mic" size="lg" colorPalette={mic ? 'blue' : 'white'} variant="solid" onClick={() => setMic(!mic)}>
+                {mic ? (
+                  <LuMic color="white" />
+                ) : (
+                  <LuMicOff color="white" />
+                )}
+              </IconButton>
+            )}
             <IconButton aria-label="Take Photo" size="lg" colorPalette="white" variant="outline" disabled={buttonsDisabled} onClick={() => takePhoto()}>
               <LuCamera color="white" />
             </IconButton>
@@ -420,13 +569,15 @@ function App() {
         </div>
         <div className="settings settings-right">
           <Flex gap="2">
-            <IconButton disabled={buttonsDisabled} aria-label="Toggle Light" size="lg" colorPalette={light ? 'blue' : 'white'} variant="solid" onClick={() => setLight(!light)}>
-              {light ? (
-                <LuLightbulb color="white" />
-              ) : (
-                <LuLightbulbOff color="white" />
-              )}
-            </IconButton>
+            {showHeadlight && (
+              <IconButton disabled={buttonsDisabled} aria-label="Toggle Light" size="lg" colorPalette={light ? 'blue' : 'white'} variant="solid" onClick={() => setLight(!light)}>
+                {light ? (
+                  <LuLightbulb color="white" />
+                ) : (
+                  <LuLightbulbOff color="white" />
+                )}
+              </IconButton>
+            )}
             <SegmentGroup.Root
               disabled={buttonsDisabled}
               size="lg"

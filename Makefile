@@ -6,6 +6,7 @@ LOCAL_IP := $(shell hostname -I | awk '{print $$1}')
 install:
 	sudo apt install -y jq
 	sudo apt install -y python3-picamera2
+	sudo apt-get install lame
 	python -m venv .venv --system-site-packages
 	$(BIN)pip install Flask==3.1.1 Flask-SocketIO==5.6.0 opencv-python==4.13.0.90 gevent==25.9.1 gevent-websocket==0.10.1 setproctitle==1.3.7
 	gcc -fPIC -shared ./backend/camera_mount/mount_functions.c ./backend/camera_mount/PCA9685.c ./backend/camera_mount/PCA9685.h -o ./backend/camera_mount/mount_functions.o
@@ -13,6 +14,7 @@ install:
 	chmod 0777 album
 	echo "dtparam=i2c_arm=on" | sudo tee -a /boot/firmware/config.txt
 	echo "[Unit]\nDescription=Pi Camera Car\nAfter=network.target\n\n[Service]\nWorkingDirectory=/home/$(CURRENT_USER)/pi-camera-car\nExecStart=/home/$(CURRENT_USER)/pi-camera-car/start_exec\nType=forking\nUser=$(CURRENT_USER)\n\n[Install]\nWantedBy=multi-user.target" | sudo tee /etc/systemd/system/car.service
+	echo "pcm.!default {\ntype hw\ncard 1\n}\nctl.!default {\ntype hw\ncard 1\n}" | sudo tee /etc/asound.conf
 	sudo systemctl daemon-reload
 	sudo systemctl enable car.service
 	sudo reboot
@@ -22,7 +24,7 @@ start:
 
 start-public:
 	$(BIN)python ./backend/app.py &
-	ngrok http 8000 &
+	ngrok start app &
 
 stop:
 	@if ! pgrep pi-camera-car > /dev/null; then \
