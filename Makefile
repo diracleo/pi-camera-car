@@ -22,7 +22,7 @@ start:
 
 start-public:
 	$(BIN)python ./backend/app.py &
-	ngrok http 8000 &
+	ngrok start app &
 
 stop:
 	@if ! pgrep pi-camera-car > /dev/null; then \

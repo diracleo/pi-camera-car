@@ -30,6 +30,8 @@ import {
 } from "react-icons/lu"
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 
+import GestureDriveImg from './assets/gesture-left.png';
+
 import './App.css';
 
 // The number of milliseconds between joystick position emissions to the backend.
@@ -174,9 +176,7 @@ function App() {
       zone: drive.current,
       lockY: true,
       shape: 'square',
-      mode: 'static',
-      restJoystick: true,
-      position: { top: 'calc(50% + 20px)', left: '120px' },
+      mode: 'dynamic',
     };
     managerDrive.current = nipplejs.create(optionsDrive);
     const optionsSteer = {
@@ -304,6 +304,21 @@ function App() {
     }
   }, [idle]);
 
+  useEffect(() => {
+    if (socket.current) {
+      socket.current.emit('light', light);
+    }
+  }, [light]);
+
+  const gestureAlignmentClass = useMemo(() => {
+    const aspectRatio = CAMERA_ASPECT_RATIO;
+    const videoWidth = window.innerHeight * aspectRatio;
+    if (videoWidth >= window.innerWidth) {
+      return 'gesture-alignBottom';
+    }
+    return 'gesture-alignCenter';
+  }, [windowDimensions]);
+
   const buttonsDisabled = photoOpen || albumOpen;
 
   return (
@@ -353,7 +368,11 @@ function App() {
           </Presence>
         </div>
         <div id="controls">
-          <div className="zone" id="drive" ref={drive}></div>
+          <div className="zone" id="drive" ref={drive}>
+            <div className={`gesture ${gestureAlignmentClass} gesture-drive${(!driveActive && !photoOpen && !albumOpen) ? ' gesture--visible' : ''}`}>
+              <img src={GestureDriveImg} />
+            </div>
+          </div>
           <div className="zone" id="steer" ref={steer}></div>
         </div>
         {albumOpen && (

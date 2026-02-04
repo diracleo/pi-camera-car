@@ -27,7 +27,7 @@ This is a Raspberry Pi car with a tiltable and pannable camera controlled by a p
 
 ## Features
 
-- Low latency for both video streaming (~20 FPS) and controls (~25 MS responsiveness)
+- Low latency for both video streaming (~24 FPS) and controls (~25 MS responsiveness)
 - Settings related to latency and video resolution can easily be configured
 - Intuitive controls with virtual joysticks that allow variability in speed and turning radius
 - Quickly toggle the UI between driving mode and camera platform position adjustment mode
@@ -35,6 +35,7 @@ This is a Raspberry Pi car with a tiltable and pannable camera controlled by a p
 - Option to auto center the camera platform upon toggling back to driving mode
 - Take HD photos and save them to an album whose photos can be viewed with phone gesture zooming and panning
 - Detects if user is idle, and if so, stops streaming video until they re-engage (saves bandwidth)
+- Supports an LED headlight that can be toggled on/off through the UI
 - The entire thing, including the Raspberry Pi, is powered by rechargable batteries
 - Can be controlled from anywhere in the world through the internet using ngrok (or locally on a WiFi network)
 

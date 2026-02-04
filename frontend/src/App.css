@@ -94,7 +94,7 @@
 }
 .App #controls .gesture.gesture-alignBottom {
   align-self: flex-end;
-  margin-bottom: 30px;
+  margin-bottom: 90px;
 }
 .App #controls .gesture > img {
   max-width: 100%;
@@ -104,7 +104,10 @@
 .App #controls .gesture.gesture--visible > img {
   display: block;
 }
-
+.App #controls .gesture.gesture-drive {
+  left: 100px;
+  margin-left: 40px;
+}
 .App .settings {
   position: absolute;
   top: 0;
